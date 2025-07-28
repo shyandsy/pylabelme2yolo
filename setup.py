@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="pylabelme2yolo",
-    version="0.1.1",
+    version="0.1.2",
     author="shyandsy",
     author_email="shyandsy@gmail.com",
     description="Convert LabelMe annotations to YOLO format",

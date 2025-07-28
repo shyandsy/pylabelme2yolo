@@ -1,0 +1,2 @@
+[console_scripts]
+pylabelme2yolo = pylabelme2yolo.cli:app
