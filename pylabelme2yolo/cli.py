@@ -30,7 +30,7 @@ def main(
         min=0.0,
         max=1.0,
     ),
-    output_format: Literal["polygon", "bbox"] = typer.Option(
+    output_format: str = typer.Option(
         "bbox",
         "--output_format", "--format",
         help="Output format (polygon or bbox)",
@@ -47,6 +47,9 @@ def main(
         callback=lambda _: typer.echo("pylabelme2yolo v0.1.0") and typer.Exit(),
     ),
 ):
+    if output_format not in ["polygon", "bbox"]:
+        raise typer.BadParameter("Invalid format. Choose 'polygon' or 'bbox'")
+
     """
     Convert LabelMe annotations to YOLO format and organize dataset structure.
     """

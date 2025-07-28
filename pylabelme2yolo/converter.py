@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple, Literal
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
+import collections
 
 def read_classes(json_dir: Path) -> Dict[int, str]:
     """Read classes.txt file and return a dictionary mapping class IDs to names."""
@@ -51,13 +52,32 @@ def convert_labelme_to_yolo(
     
     # Validate files
     file_pairs = validate_files(json_dir)
-    random.shuffle(file_pairs)
-    
-    # Calculate split sizes
-    total_files = len(file_pairs)
-    val_count = int(total_files * val_size)
-    test_count = int(total_files * test_size)
-    train_count = total_files - val_count - test_count
+
+    # Group by main label
+    class_to_files = collections.defaultdict(list)
+    for json_file, image_file in file_pairs:
+        with open(json_file, "r") as f:
+            data = json.load(f)
+        if not data["shapes"]:
+            continue
+        main_label = data["shapes"][0]["label"]
+        class_to_files[main_label].append((json_file, image_file))
+
+    train_files, val_files, test_files = [], [], []
+    for files in class_to_files.values():
+        random.shuffle(files)
+        n = len(files)
+        n_val = int(n * val_size)
+        n_test = int(n * test_size)
+        n_train = n - n_val - n_test
+        train_files.extend(files[:n_train])
+        val_files.extend(files[n_train:n_train + n_val])
+        test_files.extend(files[n_train + n_val:])
+
+    # Shuffle to mix classes
+    random.shuffle(train_files)
+    random.shuffle(val_files)
+    random.shuffle(test_files)
     
     # Create output directories
     output_dir = json_dir / "data"
@@ -67,64 +87,47 @@ def convert_labelme_to_yolo(
     (output_dir / "labels/train").mkdir(parents=True, exist_ok=True)
     (output_dir / "labels/val").mkdir(parents=True, exist_ok=True)
     (output_dir / "labels/test").mkdir(parents=True, exist_ok=True)
-    
-    # Process files
-    for i, (json_file, image_file) in enumerate(tqdm(file_pairs, desc="Processing files")):
-        # Determine split
-        if i < train_count:
-            split = "train"
-        elif i < train_count + val_count:
-            split = "val"
-        else:
-            split = "test"
-        
-        # Copy image
-        dest_image = output_dir / f"images/{split}/{image_file.name}"
-        shutil.copy2(image_file, dest_image)
-        
-        # Convert annotations
-        with open(json_file, "r") as f:
-            data = json.load(f)
-        
-        img_width = data["imageWidth"]
-        img_height = data["imageHeight"]
-        
-        yolo_lines = []
-        for shape in data["shapes"]:
-            label = shape["label"]
-            points = np.array(shape["points"])
-            
-            if output_format == "bbox":
-                # Convert to YOLO bbox format
-                x_coords = points[:, 0]
-                y_coords = points[:, 1]
-                x_min, x_max = min(x_coords), max(x_coords)
-                y_min, y_max = min(y_coords), max(y_coords)
-                
-                x_center = ((x_min + x_max) / 2) / img_width
-                y_center = ((y_min + y_max) / 2) / img_height
-                width = (x_max - x_min) / img_width
-                height = (y_max - y_min) / img_height
-                
-                yolo_line = f"{class_names[label]} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}"
-                yolo_lines.append(yolo_line)
-            else:
-                # Convert to YOLO polygon format
-                normalized_points = []
-                for x, y in points:
-                    normalized_points.append(f"{x/img_width:.6f}")
-                    normalized_points.append(f"{y/img_height:.6f}")
-                
-                yolo_line = f"{class_names[label]} {' '.join(normalized_points)}"
-                yolo_lines.append(yolo_line)
-        
-        # Write YOLO annotations
-        dest_label = output_dir / f"labels/{split}/{json_file.stem}.txt"
-        with open(dest_label, "w") as f:
-            f.write("\n".join(yolo_lines))
-    
-    # Generate dataset.yaml
+
+    # Helper to process and save
+    def process_split(split_files, split):
+        for json_file, image_file in tqdm(split_files, desc=f"Processing {split}"):
+            dest_image = output_dir / f"images/{split}/{image_file.name}"
+            shutil.copy2(image_file, dest_image)
+            with open(json_file, "r") as f:
+                data = json.load(f)
+            img_width = data["imageWidth"]
+            img_height = data["imageHeight"]
+            yolo_lines = []
+            for shape in data["shapes"]:
+                label = shape["label"]
+                points = np.array(shape["points"])
+                if output_format == "bbox":
+                    x_coords = points[:, 0]
+                    y_coords = points[:, 1]
+                    x_min, x_max = min(x_coords), max(x_coords)
+                    y_min, y_max = min(y_coords), max(y_coords)
+                    x_center = ((x_min + x_max) / 2) / img_width
+                    y_center = ((y_min + y_max) / 2) / img_height
+                    width = (x_max - x_min) / img_width
+                    height = (y_max - y_min) / img_height
+                    yolo_line = f"{class_names[label]} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}"
+                    yolo_lines.append(yolo_line)
+                else:
+                    normalized_points = []
+                    for x, y in points:
+                        normalized_points.append(f"{x / img_width:.6f}")
+                        normalized_points.append(f"{y / img_height:.6f}")
+                    yolo_line = f"{class_names[label]} {' '.join(normalized_points)}"
+                    yolo_lines.append(yolo_line)
+            dest_label = output_dir / f"labels/{split}/{json_file.stem}.txt"
+            with open(dest_label, "w") as f:
+                f.write("\n".join(yolo_lines))
+
+    process_split(train_files, "train")
+    process_split(val_files, "val")
+    process_split(test_files, "test")
     generate_dataset_yaml(output_dir, classes)
+
 
 def generate_dataset_yaml(output_dir: Path, classes: Dict[int, str]):
     """Generate YOLO dataset description file."""
