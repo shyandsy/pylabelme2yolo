@@ -1,0 +1,6 @@
+pytest==8.4.1
+numpy
+PIL
+tqdm
+typer
+setuptools

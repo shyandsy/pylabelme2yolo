@@ -1,0 +1,13 @@
+README.md
+setup.py
+pylabelme2yolo/__init__.py
+pylabelme2yolo/cli.py
+pylabelme2yolo/converter.py
+pylabelme2yolo/utils.py
+pylabelme2yolo.egg-info/PKG-INFO
+pylabelme2yolo.egg-info/SOURCES.txt
+pylabelme2yolo.egg-info/dependency_links.txt
+pylabelme2yolo.egg-info/entry_points.txt
+pylabelme2yolo.egg-info/requires.txt
+pylabelme2yolo.egg-info/top_level.txt
+tests/test.py
